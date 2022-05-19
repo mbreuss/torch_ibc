@@ -5,6 +5,7 @@ import os
 import pathlib
 import signal
 import tempfile
+import shutil
 from typing import TYPE_CHECKING, Any, Dict, Optional, Type, TypeVar, Union
 
 if TYPE_CHECKING:
@@ -188,13 +189,14 @@ class Experiment:
         except ValueError:
             # Signal throws a ValueError if we're not in the main thread.
             orig_handler = None
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = pathlib.Path(tmp_dir) / "tmp.ckpt"
-            torch.save(snapshot, tmp_path)
+        torch.save(snapshot, save_path)
+        # with tempfile.TemporaryDirectory() as tmp_dir:
+            # tmp_path = pathlib.Path(tmp_dir) / "tmp.ckpt"
+            # torch.save(snapshot, tmp_path)
             # `rename` is POSIX-compliant and thus, is an atomic operation.
             # Ref: https://docs.python.org/3/library/os.html#os.rename
-            os.rename(tmp_path, save_path)
+            # os.rename(tmp_path, save_path)
+            # shutil.move(tmp_path, save_path)
 
         # Restore SIGINT handler.
         if orig_handler is not None:

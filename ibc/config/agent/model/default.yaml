@@ -1,0 +1,7 @@
+_target_: ibc.models2.ConvMLP
+_recursive_: false
+
+coord_conv: False
+defaults:
+- small_cnn: default
+- mlp: default

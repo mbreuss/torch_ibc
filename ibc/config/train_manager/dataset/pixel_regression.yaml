@@ -1,0 +1,15 @@
+_target_: datasets2.CoordinateRegression
+_recursive_: false
+dataset_size: 30
+resolution:
+  - 96
+  - 96
+
+pixel_size: 7
+pixel_color:
+  - 0
+  - 255
+  - 0
+
+seed: null
+

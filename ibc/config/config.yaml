@@ -1,0 +1,12 @@
+defaults:
+  - agent: ibc_agent
+  - train_manager: default
+
+log_dir: ../
+
+hydra:
+  run:
+    dir: ${log_dir}/runs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+    dir: ${log_dir}/runs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.override_dirname}

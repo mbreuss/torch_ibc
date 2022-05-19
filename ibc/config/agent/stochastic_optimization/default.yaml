@@ -1,0 +1,7 @@
+_target_: ibc.optimizers2.DerivativeFreeOptimizer
+
+noise_scale: 0.33
+noise_shrink: 0.5
+iters: 3
+train_samples: 256
+inference_samples: 2 ** 14

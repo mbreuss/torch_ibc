@@ -1,0 +1,12 @@
+_target_: ibc.models2.SmallCNN
+in_channels: 3
+blocks:
+  - 32
+  - 32
+  - 16
+input_width: 96
+input_height: 96
+activation_fn: "ReLU"
+output_dimension: 32
+linear_dropout: 0.25
+l2_normalize_output: True

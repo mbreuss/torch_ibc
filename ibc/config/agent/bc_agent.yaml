@@ -1,0 +1,7 @@
+_target_: bc_agent.BCAgent
+_recursive_: false
+
+defaults:
+  - model: default
+  - optimization: default
+
