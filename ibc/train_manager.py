@@ -1,9 +1,7 @@
-
-
 import torch
 import hydra
 from omegaconf import DictConfig
-import tqdm
+from tqdm import tqdm
 import wandb
 
 
@@ -15,6 +13,7 @@ class TrainingManager:
                  train_batch_size: int,
                  test_batch_size: int,
                  num_workers: int,
+                 eval_every_n_steps: int,
                  dataset: DictConfig,
                  test_dataset: DictConfig):
         self._seed = seed
@@ -22,6 +21,7 @@ class TrainingManager:
         self._train_batch_size = train_batch_size
         self._test_batch_size = test_batch_size
         self._num_workers = num_workers
+        self._eval_every_n_steps = eval_every_n_steps
 
         self._train_dataset = hydra.utils.instantiate(dataset)
         self._test_dataset = hydra.utils.instantiate(test_dataset)
@@ -56,22 +56,33 @@ class TrainingManager:
 
     def train_agent(self, agent):
 
-        for epoch in range(self._max_epochs):
+        # first get the bounds of the dataset
+        bounds = self._train_dataset.get_target_bounds()
+        agent._stochastic_optimizer.get_bounds(bounds)
+
+        for epoch in tqdm(range(self._max_epochs)):
 
             train_loss = []
-            mean_mse = agent._evaluate(self._data_loader["test"])
-            print('Epoch {}: Mean test mse is {}'.format(epoch, mean_mse))
+
+            if not agent.steps % self._eval_every_n_steps:
+                mean_mse = agent.evaluate(self._data_loader["test"])
+                print('Epoch {}: Mean test mse is {}'.format(epoch, mean_mse))
 
             for batch in self._data_loader['train']:
-                batch_loss = agent._train_step(*batch)
+                batch_loss = agent.train_step(*batch)
                 train_loss.append(batch_loss)
 
             mean_train_loss = sum(train_loss) / len(train_loss)
-            print('Mean train mse is {}'.format(mean_train_loss))
-            #wandb.log({"loss": mean_train_loss, 'test_loss': mean_mse})
-            # wandb.watch(agent._model)
+            # print('Mean train mse is {}'.format(mean_train_loss))
+            wandb.log({"loss": mean_train_loss, 'test_loss': mean_mse, 'lr': agent._lr_scheduler.get_last_lr()[0]})
+            wandb.watch(agent._model)
 
         print('Training done!')
+
+
+    @property
+    def data_loader(self):
+        return self._data_loader
 
 
 @hydra.main(config_path="config", config_name="config.yaml")
@@ -81,7 +92,7 @@ def main(cfg: DictConfig) -> None:
     # wandb.init(project="EBM-Regression", entity="bennoq")
     train_manager = hydra.utils.instantiate(cfg.train_manager)
     agent = hydra.utils.instantiate(cfg.agent)
-    agent.configure_device('cuda')
+    agent.configure_device('cpu')
     train_manager.train_agent(agent)
     print('done')
 

@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.parameter import Parameter
-from modules import CoordConv, GlobalAvgPool2d, GlobalMaxPool2d, SpatialSoftArgmax
+from ibc.modules import CoordConv, GlobalAvgPool2d, GlobalMaxPool2d, SpatialSoftArgmax
 from omegaconf import DictConfig
 import hydra
 
@@ -86,6 +86,9 @@ class MLPNetwork(nn.Module):
                 x = self.act(x)
         return x
 
+    def get_device(self, device: torch.device):
+        self._device = device
+
 
 class ResidualBlock(nn.Module):
     def __init__(
@@ -129,34 +132,41 @@ class SmallCNN(nn.Module):
         self._output_dim = output_dimension
         self._linear_dropout = linear_dropout
         self._l2_normalize_output = l2_normalize_output
-        w, h = self.calc_out_size(input_width, input_height, 8, 0, 2)
-        w, h = self.calc_out_size(w, h, 8, 0, 2)
-        w, h = self.calc_out_size(w, h, 8, 0, 2)
+        w, h = self.calc_out_size(input_width, input_height, 3, 1, 1)
+        w, h = self.calc_out_size(w, h, 3, 1, 1)
+        w, h = self.calc_out_size(w, h, 3, 1, 1)
+        w, h = self.calc_out_size(w, h, 1, 1, 1)
         self.act = return_activiation_fcn(activation_fn)
 
         self.spatial_softmax = SpatialSoftmax(num_rows=w, num_cols=h, temperature=1.0)
         layers = []
-        for depth_out in blocks:
+        for depth_out in blocks[:-1]:
             layers.extend(
                 [
-                    nn.Conv2d(in_channels=self._depth_in, out_channels=depth_out, kernel_size=8, stride=2),
-                    self.act
+                    nn.Conv2d(in_channels=self._depth_in, out_channels=depth_out, kernel_size=3, padding=1),
+                    ResidualBlock(depth_out, activation_fn)
                 ]
             )
             self._depth_in = depth_out
+        layers.extend(
+            [
+                self.act,
+                nn.Conv2d(in_channels=self._depth_in, out_channels= blocks[-1], kernel_size=1, padding=1)
+            ]
+        )
+
         self.net = nn.Sequential(*layers)
-        # build linear dimensions
-        # self.fc1 = nn.Sequential(nn.Linear(in_features=depth_out*2, out_features=64), self.act, nn.Dropout(self._linear_dropout))  # shape: [N, 64]
-        # self.fc2 = nn.Linear(in_features=64, out_features=self._output_dim)  # shape: [N, 32]
+        print('SmallCNN parameters: {}'.format(sum(p.numel() for p in self.net.parameters())))
+        print('softmax parameters: {}'.format(sum(p.numel() for p in self.spatial_softmax.parameters())))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         out = self.net(x)
+        out = self.act(out)
         out = self.spatial_softmax(out)
-        # out = self.fc1(out)
-        # out = self.fc2(out)
-        if self._l2_normalize_output:
-            out = F.normalize(out, p=2, dim=1)
         return out
+
+    def get_device(self, device: torch.device):
+        self._device = device
 
     @staticmethod
     def calc_out_size(w: int, h: int, kernel_size: int, padding: int, stride: int) -> Tuple[int, int]:
@@ -174,8 +184,10 @@ class ConvMLP(nn.Module):
 
         self.coord_conv = coord_conv
         self.cnn = hydra.utils.instantiate(small_cnn)
-        # self.mlp = hydra.utils.instantiate(mlp)
         self.mlp = hydra.utils.instantiate(mlp)
+
+    def get_device(self, device: torch.device):
+        self._device = device
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self.coord_conv:
@@ -193,17 +205,33 @@ class EBMConvMLP(nn.Module):
         super().__init__()
 
         self.coord_conv = coord_conv
+        if coord_conv:
+            small_cnn.in_channels = small_cnn.in_channels + 2
         self.cnn = hydra.utils.instantiate(small_cnn)
-        self.reducer = SpatialSoftmax(num_rows=16, num_cols=16, temperature=1.0)
         self.mlp = hydra.utils.instantiate(mlp)
 
+        print('CNN parameters: {}'.format(sum(p.numel() for p in self.cnn.parameters())))
+        print('mlp parameters: {}'.format(sum(p.numel() for p in self.mlp.parameters())))
+
+    def get_device(self, device: torch.device):
+        self._device = device
+        self.cnn.get_device(device)
+        self.mlp.get_device(device)
+        self.cnn.to(device)
+        self.mlp.to(device)
+
     def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        x = x.to(self._device) # [B, D, V1, V2]
+        y = y.to(self._device) # [B, N, dim_samples]
         if self.coord_conv:
             x = CoordConv()(x)
-        out = self.cnn(x)
-        fused = torch.cat([out, y], dim=1)
+        out = self.cnn(x) # [B, 32]
+        fused = torch.cat([out.unsqueeze(1).expand(-1, y.size(1), -1), y], dim=-1) #
+        B, N, D = fused.size()
+        fused = fused.reshape(B * N, D)
+        # fused = torch.cat([out, y], dim=1)
         out = self.mlp(fused)
-        return out
+        return out.view(B, N)
 
 
 # from https://github.com/mees/calvin/blob/main/calvin_models/calvin_agent/models/perceptual_encoders/vision_network.py
@@ -247,7 +275,7 @@ class SpatialSoftmax(nn.Module):
 @hydra.main(config_path="config", config_name="config.yaml")
 def main(cfg: DictConfig) -> None:
     print(cfg)
-    net = hydra.utils.instantiate(cfg.model)
+    net = hydra.utils.instantiate(cfg.agent.model)
     # net = ConvMLP(cfg)
     print(net)
 

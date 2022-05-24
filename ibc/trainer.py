@@ -93,7 +93,7 @@ class ExplicitTrainState:
         self.scheduler.step()
 
         self.steps += 1
-
+        print('train loss: {}'.format(loss))
         return experiment.TensorboardLogData(
             scalars={
                 "train/loss": loss.item(),
@@ -180,13 +180,12 @@ class ImplicitTrainState:
         self, input: torch.Tensor, target: torch.Tensor
     ) -> experiment.TensorboardLogData:
         self.model.train()
-
         input = input.to(self.device)
         target = target.to(self.device)
 
         # Generate N negatives, one for each element in the batch: (B, N, D).
         negatives = self.stochastic_optimizer.sample(input.size(0), self.model)
-
+        print(negatives.shape)
         # Merge target and negatives: (B, N+1, D).
         targets = torch.cat([target.unsqueeze(dim=1), negatives], dim=1)
 
@@ -213,6 +212,7 @@ class ImplicitTrainState:
         self.optimizer.step()
         self.scheduler.step()
 
+        print('loss {}'.format(loss))
         self.steps += 1
 
         return experiment.TensorboardLogData(

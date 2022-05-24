@@ -108,6 +108,7 @@ class CNN(nn.Module):
 
         self.net = nn.Sequential(*layers)
         self.activation = config.activation_fn.value()
+        print('SmallCNN parameters: {}'.format(sum(p.numel() for p in self.net.parameters())))
 
     def forward(self, x: torch.Tensor, activate: bool = False) -> torch.Tensor:
         out = self.net(x)
@@ -161,6 +162,13 @@ class EBMConvMLP(nn.Module):
         self.conv = nn.Conv2d(config.cnn_config.blocks[-1], 16, 1)
         self.reducer = config.spatial_reduction.value()
         self.mlp = MLP(config.mlp_config)
+        print('single CNN parameters: {}'.format(sum(p.numel() for p in self.conv.parameters())))
+        print('reducer: {}'.format(sum(p.numel() for p in self.reducer.parameters())))
+
+        print('CNN parameters: {}'.format(sum(p.numel() for p in self.cnn.parameters()) +
+                                       sum(p.numel() for p in self.conv.parameters()) +
+                                       sum(p.numel() for p in self.reducer.parameters())))
+        print('mlp parameters: {}'.format(sum(p.numel() for p in self.mlp.parameters())))
 
     def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         if self.coord_conv:

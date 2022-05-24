@@ -1,8 +1,8 @@
 _target_: ibc.models2.MLPNetwork
 
-input_dim: 32
-hidden_dim: 100
+input_dim: 34
+hidden_dim: 256
 num_hidden_layers: 1
 output_dim: 2
-dropout: 0.25
+dropout: 0
 activation: "sigmoid"

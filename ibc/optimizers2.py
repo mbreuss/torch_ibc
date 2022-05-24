@@ -57,36 +57,36 @@ class DerivativeFreeOptimizer(nn.Module):
         self._train_samples = train_samples
         self._iters = iters
         self._inference_samples = inference_samples
-        self._bounds = None
-        self._device = None
+        self.bounds = None
+        self.device = None
 
-    def _get_device(self, device: torch.device):
-        self._device = device
+    def get_device(self, device: torch.device):
+        self.device = device
 
-    def _get_bounds(self, bounds: np.ndarray):
-        self._bounds = bounds
+    def get_bounds(self, bounds: np.ndarray):
+        self.bounds = bounds
 
     def _sample(self, num_samples: int) -> torch.Tensor:
         """Helper method for drawing samples from the uniform random distribution."""
-        size = (num_samples, self._bounds.shape[1])
-        samples = np.random.uniform(self._bounds[0, :], self._bounds[1, :], size=size)
-        return torch.as_tensor(samples, dtype=torch.float32, device=self._device)
+        size = (num_samples, self.bounds.shape[1])
+        samples = np.random.uniform(self.bounds[0, :], self.bounds[1, :], size=size) # [N, X] with X: action dim
+        return torch.as_tensor(samples, dtype=torch.float32, device=self.device)
 
     def sample(self, batch_size: int, ebm: nn.Module) -> torch.Tensor:
         del ebm  # The derivative-free optimizer does not use the ebm for sampling.
-        samples = self._sample(batch_size * self._train_samples)
-        return samples.reshape(batch_size, self._train_samples, -1)
+        samples = self._sample(batch_size * self._train_samples)  # [B *T, X] with X: action dim
+        return samples.reshape(batch_size, self._train_samples, -1) # [B, T, X]
 
     @torch.no_grad()
     def infer(self, x: torch.Tensor, ebm: nn.Module) -> torch.Tensor:
         """
-        Optimize for the best action given a trained EBM.
+        Optimize for the best action given an EBM.
         """
         noise_scale = self._noise_scale
-        bounds = torch.as_tensor(self._bounds).to(self._device)
+        bounds = torch.as_tensor(self.bounds).to(self.device) # [2 ,X] with X action dim
 
-        samples = self._sample(x.size(0) * self.inference_samples)
-        samples = samples.reshape(x.size(0), self.inference_samples, -1)
+        samples = self._sample(x.size(0) * self._inference_samples) # [B * num_samples, X]
+        samples = samples.reshape(x.size(0), self._inference_samples, -1) # [B, num_samples, X]
 
         for i in range(self._iters):
             # Compute energies.
@@ -94,14 +94,14 @@ class DerivativeFreeOptimizer(nn.Module):
             probs = F.softmax(-1.0 * energies, dim=-1)
 
             # Resample with replacement.
-            idxs = torch.multinomial(probs, self.inference_samples, replacement=True)
+            idxs = torch.multinomial(probs, self._inference_samples, replacement=True)
             samples = samples[torch.arange(samples.size(0)).unsqueeze(-1), idxs]
 
             # Add noise and clip to target bounds.
             samples = samples + torch.randn_like(samples) * noise_scale
             samples = samples.clamp(min=bounds[0, :], max=bounds[1, :])
 
-            noise_scale *= self.noise_shrink
+            noise_scale *= self._noise_shrink
 
         # Return target with highest probability.
         energies = ebm(x, samples)
@@ -138,27 +138,27 @@ class LangevinMCMCSampler(nn.Module):
         self._num_iterations = num_iterations
         self._gradient_scale = 0.5
         self._use_polynomial_rate = use_polynomial_rate,  # default is exponential
-        self_sampler_stepsize_power = sampler_stepsize_power
+        self._sampler_stepsize_power = sampler_stepsize_power
         self._sampler_stepsize_final = sampler_stepsize_final
-        self._bounds = None
-        self._device = None
+        self.bounds = None
+        self.device = None
 
         # the Langevin MCMC uses a learning rate decay scheduler to adapt the step size of the sampling
         # based on the paper implementations
         if self._use_polynomial_rate:
             self._schedule = PolynomialSchedule(self._sampler_stepsize_init,
                                                 self._sampler_stepsize_final,
-                                                self_sampler_stepsize_power,
+                                                self._sampler_stepsize_power,
                                                 self._num_iterations)
         else:
             self._schedule = ExponentialSchedule(self._sampler_stepsize_init,
                                                  self._sampler_stepsize_decay)
 
     def _get_device(self, device: torch.device):
-        self._device = device
+        self.device = device
 
     def _get_bounds(self, bounds: np.ndarray):
-        self._bounds = bounds
+        self.bounds = bounds
 
     def _sample(self,
                 ebm: nn.Module,
@@ -182,7 +182,7 @@ class LangevinMCMCSampler(nn.Module):
             e = ebm(x)
             grad = autograd.grad(e.sum(), x, only_inputs=True)[0]
             # scale gradients if actions would be in range of -1 to 1
-            delta_action_clip = delta_action_clip * 0.5 * (self._bounds[1, :], self._bounds[1, :])
+            delta_action_clip = delta_action_clip * 0.5 * (self.bounds[1, :], self.bounds[1, :])
             # compute gradient norm
             grad_norm = grad.norm()
             # clip the gradients
@@ -192,7 +192,7 @@ class LangevinMCMCSampler(nn.Module):
             # this is in the Langevin dynamics equation.
             dynamics = step_size * (self._gradient_scale * grad + noise)
             x = x - dynamics
-            x = torch.clip(x, self._bounds[1, :], self._bounds[1, :])
+            x = torch.clip(x, self.bounds[1, :], self.bounds[1, :])
             l_energies.append(e.detach())
             l_norms.append(grad_norm.detach())
 
@@ -222,7 +222,7 @@ def train_wrapper(cfg: DictConfig) -> None:
 
     dataset = CoordinateRegression(DatasetConfig(dataset_size=10))
     bounds = dataset.get_target_bounds()
-    so = hydra.utils.instantiate(cfg.agent.StochasticOptimization)
+    so = hydra.utils.instantiate(cfg.agent.stochastic_optimization)
     so._get_bounds(bounds)
     so._get_device('cpu')
     negatives = so.sample(64, nn.Identity())

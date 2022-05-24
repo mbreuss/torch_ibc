@@ -12,20 +12,22 @@ class IBCAgent:
                  model: DictConfig,
                  optimization: DictConfig,
                  stochastic_optimization: DictConfig,
+                 lr_scheduler: DictConfig
                  ):
 
         self._model = hydra.utils.instantiate(model)
         self._optimizer = hydra.utils.instantiate(optimization, params=self._model.parameters())
         self._stochastic_optimizer = hydra.utils.instantiate(stochastic_optimization)
+        self._lr_scheduler = hydra.utils.instantiate(lr_scheduler, optimizer=self._optimizer)
         self._device = None
-        # TODO think about adding LR scheduler
         self.steps = 0
 
     def configure_device(self, device: torch.device):
         self._device = device
-        self._stochastic_optimizer._get_device(device)
+        self._stochastic_optimizer.get_device(device)
+        self._model.get_device(device)
 
-    def _train_step(self, input: torch.Tensor, target: torch.Tensor):
+    def train_step(self, input: torch.Tensor, target: torch.Tensor):
         """
         Executes a single training step on a mini-batch of data
         """
@@ -51,6 +53,7 @@ class IBCAgent:
         # For every element in the mini-batch, there is 1 positive for which the EBM
         # should output a low energy value, and N negatives for which the EBM should
         # output high energy values.
+        print(input.shape)
         energy = self._model(input, targets)
 
         # Interpreting the energy as a negative logit, we can apply a cross entropy loss
@@ -58,27 +61,29 @@ class IBCAgent:
         logits = -1.0 * energy
         loss = F.cross_entropy(logits, ground_truth)
 
-        self.optimizer.zero_grad(set_to_none=True)
+        self._optimizer.zero_grad(set_to_none=True)
         loss.backward()
-        self.optimizer.step()
+        self._optimizer.step()
+        self._lr_scheduler.step()
 
         self.steps += 1
+        return loss
 
     @torch.no_grad()
-    def _evaluate(self, dataloader: torch.utils.data.DataLoader):
+    def evaluate(self, dataloader: torch.utils.data.DataLoader):
         """
         Method for evaluating the model on one epoch of data
         """
         self._model.eval()
 
         total_mse = 0.0
-        for input, target in tqdm(dataloader, leave=False):
+        # for input, target in tqdm(dataloader, leave=False):
+        for input, target in dataloader:
             input = input.to(self._device)
             target = target.to(self._device)
 
             out = self._stochastic_optimizer.infer(input, self._model)
 
-            out = self._model(input)
             mse = F.mse_loss(out, target, reduction="none")
             total_mse += mse.mean(dim=-1).sum().item()
 
@@ -92,10 +97,6 @@ class IBCAgent:
         """
         self._model.eval()
         return self._stochastic_optimizer.infer(input.to(self._device), self._model)
-
-    def _get_eval_loss(self):
-        NotImplementedError
-
 
 
 @hydra.main(config_path="config", config_name="config.yaml")

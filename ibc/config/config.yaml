@@ -10,3 +10,7 @@ hydra:
   sweep:
     dir: ${log_dir}/runs/${now:%Y-%m-%d}/${now:%H-%M-%S}
     subdir: ${hydra.job.override_dirname}
+
+wandb:
+  entity: bennoq
+  project: EBM-Regression

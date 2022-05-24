@@ -1,4 +1,4 @@
-_target_: datasets2.CoordinateRegression
+_target_: ibc.datasets2.CoordinateRegression
 _recursive_: false
 dataset_size: 500
 resolution:

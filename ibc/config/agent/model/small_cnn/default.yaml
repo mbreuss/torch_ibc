@@ -1,6 +1,7 @@
 _target_: ibc.models2.SmallCNN
 in_channels: 3
 blocks:
+  - 16
   - 32
   - 32
   - 16

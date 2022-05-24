@@ -1,4 +1,4 @@
-_target_: train_manager.TrainingManager
+_target_: ibc.train_manager.TrainingManager
 _recursive_: false
 
 defaults:
@@ -6,7 +6,8 @@ defaults:
  - test_dataset: test_pixelregression
 
 seed: 42
-max_epochs: 50
-train_batch_size: 5
-test_batch_size: 1
+max_epochs: 2000
+train_batch_size: 8
+test_batch_size: 64
 num_workers: 1
+eval_every_n_steps: 1000

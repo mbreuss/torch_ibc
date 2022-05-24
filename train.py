@@ -134,8 +134,7 @@ def make_train_state(
             stochastic_optim_config=stochastic_optim_config,
             device_type=train_config.device_type,
         )
-
-    return train_state
+    print(sum(p.numel() for p in train_state.model.parameters()))
 
 
 def main(train_config: TrainConfig) -> None:
@@ -145,12 +144,12 @@ def main(train_config: TrainConfig) -> None:
     # CUDA/CUDNN-related shenanigans.
     utils.set_cudnn(train_config.cudnn_deterministic, train_config.cudnn_benchmark)
 
-    experiment = Experiment(
-        identifier=train_config.experiment_name,
-    ).assert_new()
+    #experiment = Experiment(
+    #    identifier=train_config.experiment_name,
+    #).assert_new()
 
     # Write some metadata.
-    experiment.write_metadata("config", train_config)
+    # experiment.write_metadata("config", train_config)
 
     # Initialize train and test dataloaders.
     dataloaders = make_dataloaders(train_config)
@@ -158,22 +157,22 @@ def main(train_config: TrainConfig) -> None:
     train_state = make_train_state(train_config, dataloaders["train"])
 
     for epoch in tqdm(range(train_config.max_epochs)):
-        if not train_state.steps % train_config.checkpoint_every_n_steps:
-            experiment.save_checkpoint(train_state, step=train_state.steps)
+        # if not train_state.steps % train_config.checkpoint_every_n_steps:
+            # experiment.save_checkpoint(train_state, step=train_state.steps)
 
         if not train_state.steps % train_config.eval_every_n_steps:
             test_log_data = train_state.evaluate(dataloaders["test"])
-            experiment.log(test_log_data, step=train_state.steps)
+            # experiment.log(test_log_data, step=train_state.steps)
 
         for batch in dataloaders["train"]:
             train_log_data = train_state.training_step(*batch)
 
             # Log to tensorboard.
-            if not train_state.steps % train_config.log_every_n_steps:
-                experiment.log(train_log_data, step=train_state.steps)
+            # if not train_state.steps % train_config.log_every_n_steps:
+                # experiment.log(train_log_data, step=train_state.steps)
 
     # Save one final checkpoint.
-    experiment.save_checkpoint(train_state, step=train_state.steps)
+    # experiment.save_checkpoint(train_state, step=train_state.steps)
 
 
 if __name__ == "__main__":
